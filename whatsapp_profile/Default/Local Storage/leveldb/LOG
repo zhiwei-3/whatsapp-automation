@@ -1,0 +1,15 @@
+2025/06/13-15:11:24.383 1c48 Reusing MANIFEST C:\Users\User\PycharmProjects\PythonProject\whatsapp_profile\Default\Local Storage\leveldb/MANIFEST-000001
+2025/06/13-15:11:24.399 1c48 Recovering log #1154
+2025/06/13-15:11:24.404 1c48 Reusing old log C:\Users\User\PycharmProjects\PythonProject\whatsapp_profile\Default\Local Storage\leveldb/001154.log 
+2025/06/13-15:14:25.513 3244 Level-0 table #1158: started
+2025/06/13-15:14:25.519 3244 Level-0 table #1158: 11358 bytes OK
+2025/06/13-15:14:25.521 3244 Delete type=0 #1154
+2025/06/13-15:14:25.522 3244 Compacting 4@0 + 1@1 files
+2025/06/13-15:14:25.564 3244 Generated table #1159@0: 65087 keys, 1494278 bytes
+2025/06/13-15:14:25.565 3244 Compacted 4@0 + 1@1 files => 1494278 bytes
+2025/06/13-15:14:25.566 3244 compacted to: files[ 0 1 1 0 0 0 0 ]
+2025/06/13-15:14:25.567 3244 Delete type=2 #1149
+2025/06/13-15:14:25.567 3244 Delete type=2 #1151
+2025/06/13-15:14:25.567 3244 Delete type=2 #1153
+2025/06/13-15:14:25.567 3244 Delete type=2 #1155
+2025/06/13-15:14:25.567 3244 Delete type=2 #1158

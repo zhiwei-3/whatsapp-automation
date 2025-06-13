@@ -1,0 +1,5 @@
+[10112:9164:0613/151121.416:INFO:components\enterprise\browser\controller\chrome_browser_cloud_management_controller.cc:202] No machine level policy manager exists.
+[10112:9164:0613/151125.557:INFO:CONSOLE:163] "Event handler of 'x-storagemutated-1' event must be added on the initial evaluation of worker script.", source: https://static.whatsapp.net/rsrc.php/v4/yu/r/vz4Unmp2Gmp.js (163)
+[10112:9164:0613/151129.158:INFO:CONSOLE:163] "Event handler of 'x-storagemutated-1' event must be added on the initial evaluation of worker script.", source: https://static.whatsapp.net/rsrc.php/v4/yu/r/vz4Unmp2Gmp.js (163)
+[10112:9164:0613/152334.597:INFO:CONSOLE:163] "Event handler of 'x-storagemutated-1' event must be added on the initial evaluation of worker script.", source: https://static.whatsapp.net/rsrc.php/v4/yu/r/vz4Unmp2Gmp.js (163)
+[10112:9164:0613/152354.263:INFO:CONSOLE:0] "Blocked attempt to show a 'beforeunload' confirmation panel for a frame that never had a user gesture since its load. https://www.chromestatus.com/feature/5082396709879808", source: https://web.whatsapp.com/ (0)

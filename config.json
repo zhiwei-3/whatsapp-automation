@@ -1,0 +1,7 @@
+{
+    "min_delay": 300,
+    "max_delay": 500,
+    "headless": true,
+    "save_reports": true,
+    "dark_mode": true
+}
