@@ -63,7 +63,7 @@ class AutomationResult:
 
 class WhatsAppAutomationGUI:
     def __init__(self):
-        """Initialize the GUI application with enhanced styling and features"""
+        """Initialize GUI application"""
         self.root = tk.Tk()
         self.setup_window()
         self.load_config()
@@ -270,7 +270,7 @@ class WhatsAppAutomationGUI:
             foreg = 'white'
 
         # Message template input
-        self.message_text = tk.Text(message_frame, height=6, font=('Helvetica', 10), bg=backg, fg=foreg)
+        self.message_text = tk.Text(message_frame, height=7, font=('Helvetica', 10), bg=backg, fg=foreg)
         self.message_text.pack(fill=tk.X)
 
         # Template variables helper
@@ -452,30 +452,38 @@ class WhatsAppAutomationGUI:
         self.root.destroy()
 
     def save_template(self):
+        """Save message template as txt file"""
         self.save_template_button.config(state=tk.DISABLED)
         template = self.message_text.get("1.0", tk.END).strip()
         try:
             with open(TEMPLATE_FILE, 'w', encoding="utf-8") as msg:
                 msg.write(template)
             self.save_template_button.config(text="Template Saved!")
+            self.save_template_button.update_idletasks()
 
         except Exception as e:
             print(f'Error saving template: {e}')
+            self.save_template_button.config(text="Error Saving")
         finally:
+            time.sleep(.5)
             self.save_template_button.config(text="Save Template")
             self.save_template_button.config(state=tk.ACTIVE)
 
     def load_template(self):
+        """Load saved message template"""
         self.load_template_button.config(state=tk.DISABLED)
         try:
             with open(TEMPLATE_FILE, 'r', encoding="utf-8") as msg:
                 template = msg.read()
                 self.message_text.insert("1.0", template)
-            self.load_template_button.config(text="Loading Template")
+            self.load_template_button.config(text="Template Loaded!")
+            self.load_template_button.update_idletasks()
 
         except Exception as e:
             print(f'Error loading template: {e}')
+            self.load_template_button.config(text="Error Loading")
         finally:
+            time.sleep(.5)
             self.load_template_button.config(text="Load Template")
             self.load_template_button.config(state=tk.ACTIVE)
 
@@ -572,10 +580,22 @@ class WhatsAppAutomationGUI:
                 # Update preview
                 self.update_preview()
 
-                # Show detected columns
+                # Show detected columns with counts
+                total_rows = len(self.df)
                 detection_text = "Detected columns:\n"
-                detection_text += f"Phone Numbers: {self.phone_column or 'Not detected'}\n"
-                detection_text += f"Names: {self.name_column or 'Not detected'}"
+
+                if self.phone_column:
+                    phone_count = self.df[self.phone_column].notna().sum()
+                    detection_text += f"Phone Numbers: {phone_count}/{total_rows} detected\n"
+                else:
+                    detection_text += "Phone Numbers: Not detected\n"
+
+                if self.name_column:
+                    name_count = self.df[self.name_column].notna().sum()
+                    detection_text += f"Names: {name_count}/{total_rows} detected"
+                else:
+                    detection_text += "Names: Not detected"
+
                 self.status_label.config(text=detection_text)
 
             except Exception as e:
@@ -585,10 +605,16 @@ class WhatsAppAutomationGUI:
         """Toggle pause/resume state"""
         self.is_paused = not self.is_paused
         self.pause_button.config(text="Resume" if self.is_paused else "Pause")
+
+        # Store the original status text so we can restore it later
+        pre_pause_text = self.status_label.cget("text")
+        pause_message = "\nAutomation PAUSED. Click Resume to continue."
+        resume_message = "\n Resuming automation..."
+
         if self.is_paused:
-            self.status_label.config(text="Automation paused. Click Resume to continue.")
+            self.status_label.config(text=pre_pause_text + pause_message)
         else:
-            self.status_label.config(text="Resuming automation...")
+            self.status_label.config(text=resume_message)
 
     def retry_failed(self):
         """Retry failed messages"""
@@ -646,6 +672,7 @@ class WhatsAppAutomationGUI:
         self.root.update()
 
     def update_status_tracking(self, results, completed, output_path=None):
+        """Update status and details for a specific contact to exel"""
         try:
             timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             status_messages = []
@@ -746,7 +773,6 @@ class WhatsAppAutomationGUI:
 
         logging.info("; ".join(status_messages))
         return "; ".join(status_messages)
-
 
     def update_excel_status(self, phone, status, details, message_sent=None):
         """Update status in Excel file for a single contact"""
@@ -988,6 +1014,34 @@ class WhatsAppAutomation:
             logging.error(f"Login timeout or error: {str(e)}")
             return False
 
+    def close_popups(self):
+        """Close any WhatsApp Web popups or banners."""
+        try:
+            while True:
+                popup_closed = False
+
+                # Close any dialog popups
+                try:
+                    popup_buttons = self.driver.find_elements(
+                        By.XPATH, "//div[@role='dialog']//button"
+                    )
+                    for btn in popup_buttons:
+                        label = (btn.text or "").strip().lower()
+                        if label:  # Only click visible, labeled buttons
+                            btn.click()
+                            logging.info(f"Closed popup dialog with button: '{label}'")
+                            time.sleep(0.3)
+                            popup_closed = True
+                except:
+                    pass
+
+                # If no popups or banners were closed, break out of loop
+                if not popup_closed:
+                    break
+
+        except Exception as e:
+            logging.warning(f"Error while closing popups: {e}")
+
     def setup_driver(self):
         """Initialize and configure Chrome WebDriver"""
         try:
@@ -1040,19 +1094,20 @@ class WhatsAppAutomation:
             raise
 
     def cooldown(self, cooldown_time, name):
-        end_time = time.time() + cooldown_time
+        """Display cooldown time in h:m:s format, pause-aware."""
+        remaining = cooldown_time
 
-        while True:
-            remaining = int(end_time - time.time())
-            if remaining <= 0:
-                self.gui.status_label.config(text="")
-                break
+        while remaining > 0:
+            # Pause handling
+            if self.gui and self.gui.is_paused:
+                time.sleep(0.5)
+                continue
 
-            hours = remaining // 3600
-            minutes = (remaining % 3600) // 60
-            seconds = remaining % 60
+            # Format remaining time
+            hours = round(remaining) // 3600
+            minutes = (round(remaining) % 3600) // 60
+            seconds = round(remaining) % 60
 
-            # Build the display string dynamically
             parts = []
             if hours > 0:
                 parts.append(f"{hours:01}h")
@@ -1062,9 +1117,14 @@ class WhatsAppAutomation:
                 parts.append(f"{seconds:01}s")
 
             time_str = " ".join(parts)
+            if self.gui:
+                self.gui.status_label.config(text=f"Sending next message to {name} in: {time_str}")
 
-            self.gui.status_label.config(text=f"Sending next message to {name} in: {time_str}")
-            time.sleep(0.3)
+            time.sleep(1)  # Tick down every second
+            remaining -= 1  # Reduce only when not paused
+
+        if self.gui:
+            self.gui.status_label.config(text="")
 
     def send_message(self, contact, message_template):
         """Send message to a specific contact"""
@@ -1125,6 +1185,7 @@ class WhatsAppAutomation:
                 contacts = self.load_data()
 
             self.setup_driver()
+            self.close_popups()
 
             results = {
                 'successful': [],
@@ -1134,10 +1195,10 @@ class WhatsAppAutomation:
 
             for contact in contacts:
                 if self.gui and self.gui.is_paused:
-                    while self.gui.is_paused and not self.gui.is_running:
+                    while self.gui.is_paused:
                         time.sleep(1)
-                    if not self.gui.is_running:
-                        break
+                        if not self.gui.is_running:
+                            return results
 
                 # Randomly select a message variation
                 message = random.choice(messages)
@@ -1162,8 +1223,14 @@ class WhatsAppAutomation:
                 if progress_callback:
                     progress_callback()
 
-                # Random delay between messages
-                time.sleep(random.uniform(5, 7))
+                # Random delay between messages (pause-aware)
+                delay = random.uniform(5, 7)
+                end_time = time.time() + delay
+                while time.time() < end_time:
+                    if self.gui and self.gui.is_paused:
+                        time.sleep(0.5)
+                        continue
+                    time.sleep(0.2)  # small chunks so pause can interrupt
 
             return results
 
