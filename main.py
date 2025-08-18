@@ -632,32 +632,42 @@ class WhatsAppAutomationGUI:
         else:
             messagebox.showinfo("Retry Failed", "No failed messages to retry.")
 
-    def update_estimated_time(self, processed, total):
-        """Update estimated time remaining"""
-        estimated_remaining = 0
+    def update_estimated_time(self, processed: int, total: int):
+        """Update estimated time remaining."""
+        # Avoid division by zero and provide a better first estimate
         if self.start_time and processed > 0:
             elapsed_time = time.time() - self.start_time
             avg_time_per_item = elapsed_time / processed
-            remaining_items = total - processed
-            estimated_remaining = remaining_items * avg_time_per_item
-
-        elif self.start_time and processed == 0:
-            avg_time_per_item = random.uniform(int(self.min_delay.get()), int(self.max_delay.get()))
-            estimated_remaining = total * avg_time_per_item
-
-        # Format time string
-        if estimated_remaining < 60:
-            time_str = f"{estimated_remaining:.0f} seconds"
-        elif estimated_remaining < 3600:
-            time_str = f"{estimated_remaining / 60:.1f} minutes"
         else:
-            time_str = f"{estimated_remaining / 3600:.1f} hours"
+            # Use user-configured delay range as initial estimate
+            try:
+                min_d = float(self.min_delay.get())
+                max_d = float(self.max_delay.get())
+                avg_time_per_item = (min_d + max_d) / 2
+            except Exception:
+                avg_time_per_item = 60*3  # default 1 min
 
-        time_stamp = time.time() + estimated_remaining
-        local_time = datetime.fromtimestamp(time_stamp)
-        estimated_time = local_time.strftime('%I:%M:%S %p').lstrip('0')
+        remaining_items = max(total - processed, 0)
+        estimated_remaining = remaining_items * avg_time_per_item
 
-        self.time_label.config(text=f"Estimated time remaining: {time_str} ({estimated_time})")
+        # Convert to human-friendly format
+        def format_duration(seconds: float) -> str:
+            if seconds < 60:
+                return f"{int(seconds)} seconds"
+            elif seconds < 3600:
+                return f"{seconds / 60:.1f} minutes"
+            else:
+                return f"{seconds / 3600:.1f} hours"
+
+        time_str = format_duration(estimated_remaining)
+
+        # Calculate ETA
+        eta_timestamp = time.time() + estimated_remaining
+        eta_str = datetime.fromtimestamp(eta_timestamp).strftime('%I:%M:%S %p').lstrip('0')
+
+        self.time_label.config(
+            text=f"Estimated time remaining: {time_str} ({eta_str})"
+        )
 
     def update_status_in_tree(self, phone, status, details):
         """Update status and details for a specific contact in the tree"""
@@ -816,6 +826,8 @@ class WhatsAppAutomationGUI:
         self.headless_check.config(state=tk.DISABLED)
         self.save_reports_check.config(state=tk.DISABLED)
         self.dark_mode_check.config(state=tk.DISABLED)
+        self.min_delay.config(state=tk.DISABLED)
+        self.max_delay.config(state=tk.DISABLED)
 
         # Reset progress
         self.progress_label.config(text=f"Progress: (0%)")
@@ -1095,18 +1107,18 @@ class WhatsAppAutomation:
 
     def cooldown(self, cooldown_time, name):
         """Display cooldown time in h:m:s format, pause-aware."""
-        remaining = cooldown_time
+        self.remaining = cooldown_time
 
-        while remaining > 0:
+        while self.remaining > 0:
             # Pause handling
             if self.gui and self.gui.is_paused:
                 time.sleep(0.5)
                 continue
 
             # Format remaining time
-            hours = round(remaining) // 3600
-            minutes = (round(remaining) % 3600) // 60
-            seconds = round(remaining) % 60
+            hours = round(self.remaining) // 3600
+            minutes = (round(self.remaining) % 3600) // 60
+            seconds = round(self.remaining) % 60
 
             parts = []
             if hours > 0:
@@ -1121,7 +1133,7 @@ class WhatsAppAutomation:
                 self.gui.status_label.config(text=f"Sending next message to {name} in: {time_str}")
 
             time.sleep(1)  # Tick down every second
-            remaining -= 1  # Reduce only when not paused
+            self.remaining -= 1  # Reduce only when not paused
 
         if self.gui:
             self.gui.status_label.config(text="")
