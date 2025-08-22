@@ -634,10 +634,13 @@ class WhatsAppAutomationGUI:
 
     def update_estimated_time(self, processed: int, total: int):
         """Update estimated time remaining."""
-        # Avoid division by zero and provide a better first estimate
-        if self.start_time and processed > 0:
-            elapsed_time = time.time() - self.start_time
-            avg_time_per_item = elapsed_time / processed
+
+        if processed > round(total/3):
+            # Avoid division by zero and provide a better first estimate
+            if self.start_time and processed > 0:
+                elapsed_time = time.time() - self.start_time
+                avg_time_per_item = elapsed_time / processed
+
         else:
             # Use user-configured delay range as initial estimate
             try:
@@ -645,7 +648,7 @@ class WhatsAppAutomationGUI:
                 max_d = float(self.max_delay.get())
                 avg_time_per_item = (min_d + max_d) / 2
             except Exception:
-                avg_time_per_item = 60*3  # default 1 min
+                avg_time_per_item = 60 * 5  # default 5 min
 
         remaining_items = max(total - processed, 0)
         estimated_remaining = remaining_items * avg_time_per_item
