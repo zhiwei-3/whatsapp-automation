@@ -63,7 +63,7 @@ class AutomationResult:
 
 class WhatsAppAutomationGUI:
     def __init__(self):
-        """Initialize the GUI application with enhanced styling and features"""
+        """Initialize GUI application"""
         self.root = tk.Tk()
         self.setup_window()
         self.load_config()
@@ -270,7 +270,7 @@ class WhatsAppAutomationGUI:
             foreg = 'white'
 
         # Message template input
-        self.message_text = tk.Text(message_frame, height=6, font=('Helvetica', 10), bg=backg, fg=foreg)
+        self.message_text = tk.Text(message_frame, height=7, font=('Helvetica', 10), bg=backg, fg=foreg)
         self.message_text.pack(fill=tk.X)
 
         # Template variables helper
@@ -452,30 +452,38 @@ class WhatsAppAutomationGUI:
         self.root.destroy()
 
     def save_template(self):
+        """Save message template as txt file"""
         self.save_template_button.config(state=tk.DISABLED)
         template = self.message_text.get("1.0", tk.END).strip()
         try:
             with open(TEMPLATE_FILE, 'w', encoding="utf-8") as msg:
                 msg.write(template)
             self.save_template_button.config(text="Template Saved!")
+            self.save_template_button.update_idletasks()
 
         except Exception as e:
             print(f'Error saving template: {e}')
+            self.save_template_button.config(text="Error Saving")
         finally:
+            time.sleep(.5)
             self.save_template_button.config(text="Save Template")
             self.save_template_button.config(state=tk.ACTIVE)
 
     def load_template(self):
+        """Load saved message template"""
         self.load_template_button.config(state=tk.DISABLED)
         try:
             with open(TEMPLATE_FILE, 'r', encoding="utf-8") as msg:
                 template = msg.read()
                 self.message_text.insert("1.0", template)
-            self.load_template_button.config(text="Loading Template")
+            self.load_template_button.config(text="Template Loaded!")
+            self.load_template_button.update_idletasks()
 
         except Exception as e:
             print(f'Error loading template: {e}')
+            self.load_template_button.config(text="Error Loading")
         finally:
+            time.sleep(.5)
             self.load_template_button.config(text="Load Template")
             self.load_template_button.config(state=tk.ACTIVE)
 
@@ -572,10 +580,22 @@ class WhatsAppAutomationGUI:
                 # Update preview
                 self.update_preview()
 
-                # Show detected columns
+                # Show detected columns with counts
+                total_rows = len(self.df)
                 detection_text = "Detected columns:\n"
-                detection_text += f"Phone Numbers: {self.phone_column or 'Not detected'}\n"
-                detection_text += f"Names: {self.name_column or 'Not detected'}"
+
+                if self.phone_column:
+                    phone_count = self.df[self.phone_column].notna().sum()
+                    detection_text += f"Phone Numbers: {phone_count}/{total_rows} detected\n"
+                else:
+                    detection_text += "Phone Numbers: Not detected\n"
+
+                if self.name_column:
+                    name_count = self.df[self.name_column].notna().sum()
+                    detection_text += f"Names: {name_count}/{total_rows} detected"
+                else:
+                    detection_text += "Names: Not detected"
+
                 self.status_label.config(text=detection_text)
 
             except Exception as e:
@@ -585,10 +605,16 @@ class WhatsAppAutomationGUI:
         """Toggle pause/resume state"""
         self.is_paused = not self.is_paused
         self.pause_button.config(text="Resume" if self.is_paused else "Pause")
+
+        # Store the original status text so we can restore it later
+        pre_pause_text = self.status_label.cget("text")
+        pause_message = "\nAutomation PAUSED. Click Resume to continue."
+        resume_message = "\n Resuming automation..."
+
         if self.is_paused:
-            self.status_label.config(text="Automation paused. Click Resume to continue.")
+            self.status_label.config(text=pre_pause_text + pause_message)
         else:
-            self.status_label.config(text="Resuming automation...")
+            self.status_label.config(text=resume_message)
 
     def retry_failed(self):
         """Retry failed messages"""
@@ -606,32 +632,45 @@ class WhatsAppAutomationGUI:
         else:
             messagebox.showinfo("Retry Failed", "No failed messages to retry.")
 
-    def update_estimated_time(self, processed, total):
-        """Update estimated time remaining"""
-        estimated_remaining = 0
-        if self.start_time and processed > 0:
-            elapsed_time = time.time() - self.start_time
-            avg_time_per_item = elapsed_time / processed
-            remaining_items = total - processed
-            estimated_remaining = remaining_items * avg_time_per_item
+    def update_estimated_time(self, processed: int, total: int):
+        """Update estimated time remaining."""
 
-        elif self.start_time and processed == 0:
-            avg_time_per_item = random.uniform(int(self.min_delay.get()), int(self.max_delay.get()))
-            estimated_remaining = total * avg_time_per_item
+        if processed > round(total/3):
+            # Avoid division by zero and provide a better first estimate
+            if self.start_time and processed > 0:
+                elapsed_time = time.time() - self.start_time
+                avg_time_per_item = elapsed_time / processed
 
-        # Format time string
-        if estimated_remaining < 60:
-            time_str = f"{estimated_remaining:.0f} seconds"
-        elif estimated_remaining < 3600:
-            time_str = f"{estimated_remaining / 60:.1f} minutes"
         else:
-            time_str = f"{estimated_remaining / 3600:.1f} hours"
+            # Use user-configured delay range as initial estimate
+            try:
+                min_d = float(self.min_delay.get())
+                max_d = float(self.max_delay.get())
+                avg_time_per_item = (min_d + max_d) / 2
+            except Exception:
+                avg_time_per_item = 60 * 5  # default 5 min
 
-        time_stamp = time.time() + estimated_remaining
-        local_time = datetime.fromtimestamp(time_stamp)
-        estimated_time = local_time.strftime('%I:%M:%S %p').lstrip('0')
+        remaining_items = max(total - processed, 0)
+        estimated_remaining = remaining_items * avg_time_per_item
 
-        self.time_label.config(text=f"Estimated time remaining: {time_str} ({estimated_time})")
+        # Convert to human-friendly format
+        def format_duration(seconds: float) -> str:
+            if seconds < 60:
+                return f"{int(seconds)} seconds"
+            elif seconds < 3600:
+                return f"{seconds / 60:.1f} minutes"
+            else:
+                return f"{seconds / 3600:.1f} hours"
+
+        time_str = format_duration(estimated_remaining)
+
+        # Calculate ETA
+        eta_timestamp = time.time() + estimated_remaining
+        eta_str = datetime.fromtimestamp(eta_timestamp).strftime('%I:%M:%S %p').lstrip('0')
+
+        self.time_label.config(
+            text=f"Estimated time remaining: {time_str} ({eta_str})"
+        )
 
     def update_status_in_tree(self, phone, status, details):
         """Update status and details for a specific contact in the tree"""
@@ -646,6 +685,7 @@ class WhatsAppAutomationGUI:
         self.root.update()
 
     def update_status_tracking(self, results, completed, output_path=None):
+        """Update status and details for a specific contact to exel"""
         try:
             timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             status_messages = []
@@ -747,7 +787,6 @@ class WhatsAppAutomationGUI:
         logging.info("; ".join(status_messages))
         return "; ".join(status_messages)
 
-
     def update_excel_status(self, phone, status, details, message_sent=None):
         """Update status in Excel file for a single contact"""
         results = {
@@ -790,6 +829,8 @@ class WhatsAppAutomationGUI:
         self.headless_check.config(state=tk.DISABLED)
         self.save_reports_check.config(state=tk.DISABLED)
         self.dark_mode_check.config(state=tk.DISABLED)
+        self.min_delay.config(state=tk.DISABLED)
+        self.max_delay.config(state=tk.DISABLED)
 
         # Reset progress
         self.progress_label.config(text=f"Progress: (0%)")
@@ -988,6 +1029,34 @@ class WhatsAppAutomation:
             logging.error(f"Login timeout or error: {str(e)}")
             return False
 
+    def close_popups(self):
+        """Close any WhatsApp Web popups or banners."""
+        try:
+            while True:
+                popup_closed = False
+
+                # Close any dialog popups
+                try:
+                    popup_buttons = self.driver.find_elements(
+                        By.XPATH, "//div[@role='dialog']//button"
+                    )
+                    for btn in popup_buttons:
+                        label = (btn.text or "").strip().lower()
+                        if label:  # Only click visible, labeled buttons
+                            btn.click()
+                            logging.info(f"Closed popup dialog with button: '{label}'")
+                            time.sleep(0.3)
+                            popup_closed = True
+                except:
+                    pass
+
+                # If no popups or banners were closed, break out of loop
+                if not popup_closed:
+                    break
+
+        except Exception as e:
+            logging.warning(f"Error while closing popups: {e}")
+
     def setup_driver(self):
         """Initialize and configure Chrome WebDriver"""
         try:
@@ -1040,19 +1109,20 @@ class WhatsAppAutomation:
             raise
 
     def cooldown(self, cooldown_time, name):
-        end_time = time.time() + cooldown_time
+        """Display cooldown time in h:m:s format, pause-aware."""
+        self.remaining = cooldown_time
 
-        while True:
-            remaining = int(end_time - time.time())
-            if remaining <= 0:
-                self.gui.status_label.config(text="")
-                break
+        while self.remaining > 0:
+            # Pause handling
+            if self.gui and self.gui.is_paused:
+                time.sleep(0.5)
+                continue
 
-            hours = remaining // 3600
-            minutes = (remaining % 3600) // 60
-            seconds = remaining % 60
+            # Format remaining time
+            hours = round(self.remaining) // 3600
+            minutes = (round(self.remaining) % 3600) // 60
+            seconds = round(self.remaining) % 60
 
-            # Build the display string dynamically
             parts = []
             if hours > 0:
                 parts.append(f"{hours:01}h")
@@ -1062,9 +1132,14 @@ class WhatsAppAutomation:
                 parts.append(f"{seconds:01}s")
 
             time_str = " ".join(parts)
+            if self.gui:
+                self.gui.status_label.config(text=f"Sending next message to {name} in: {time_str}")
 
-            self.gui.status_label.config(text=f"Sending next message to {name} in: {time_str}")
-            time.sleep(0.3)
+            time.sleep(1)  # Tick down every second
+            self.remaining -= 1  # Reduce only when not paused
+
+        if self.gui:
+            self.gui.status_label.config(text="")
 
     def send_message(self, contact, message_template):
         """Send message to a specific contact"""
@@ -1078,38 +1153,55 @@ class WhatsAppAutomation:
 
             # Define the XPaths
             error_message_xpath = "//*[contains(text(), 'Phone number shared via url is invalid.')]"
-            send_button_xpath = "//button[@aria-label='Send']"
+            send_button_xpath_list = [
+                "//button[@aria-label='Send']"
+                "//*[@role='button' and @aria-label='Send']",
+                "//span[@data-icon='wds-ic-send-filled']/ancestor::*[@role='button']"
+            ]
+
+            wait = WebDriverWait(self.driver, 25)
 
             # Wait for either the error message or the chat box to load
             try:
-                element = WebDriverWait(self.driver, 15).until(
-                    EC.presence_of_element_located((By.XPATH, f"{error_message_xpath} | {send_button_xpath}"))
-                )
-                # Check which element was found first
-                if element.get_attribute("aria-label") == "Send":
-                    # Send button was found, so proceed to send the message
-                    # Random delay before sending
-                    self.cooldown(random.uniform(self.min_delay, self.max_delay), contact['name'])
-
-                    # Click the send button
-                    element.click()
-                    time.sleep(3)  # Wait for the message to send
-
-                    logging.info(f"Message sent to {contact['phone']}")
-                    print(f"Message sent to {contact['phone']}")
-                    return True, message, None
-
-                else:
-                    # Error message was found, skip to the next contact
-                    logging.warning(f"Invalid phone number for {contact['phone']}. Skipping.")
-                    print(f"Invalid phone number for {contact['phone']}. Skipping.")
-                    return False, None, 'Invalid phone number'
+                wait.until(EC.any_of(
+                    EC.presence_of_element_located((By.XPATH, error_message_xpath)),
+                    EC.element_to_be_clickable((By.XPATH, send_button_xpath_list[0])),
+                    EC.element_to_be_clickable((By.XPATH, send_button_xpath_list[1])),
+                    EC.element_to_be_clickable((By.XPATH, send_button_xpath_list[2]))
+                ))
 
             except Exception as e:
-                # If neither element appears, log the issue
-                logging.error(f"Failed to load chat or detect error for {contact['phone']}: {str(e)}")
-                print(f"Failed to load chat or detect error for {contact['phone']}: {str(e)}")
-                return False, None, 'Failed to load chat or detect error'
+                logging.error(f"Timeout waiting for chat to load or error message for {contact['phone']}")
+                print(f"Timeout waiting for chat to load or error message for {contact['phone']}")
+                return False, None, 'Timeout'
+
+            # Check if error message exists
+            if len(self.driver.find_elements(By.XPATH, error_message_xpath)) > 0:
+                logging.warning(f"Invalid phone number for {contact['phone']}. Skipping.")
+                print(f"Invalid phone number for {contact['phone']}. Skipping.")
+                return False, None, 'Invalid phone number'
+
+            # Otherwise, try to find the send button
+            send_button = None
+            for xpath in send_button_xpath_list:
+                elems = self.driver.find_elements(By.XPATH, xpath)
+                if elems:
+                    send_button = elems[0]
+                    break
+
+            if not send_button:
+                logging.error(f"Send button not found for {contact['phone']}")
+                print(f"Send button not found for {contact['phone']}")
+                return False, None, 'Send button not found'
+
+            # Wait a random delay before clicking send
+            self.cooldown(random.uniform(self.min_delay, self.max_delay), contact['name'])
+            send_button.click()
+            time.sleep(3)
+
+            logging.info(f"Message sent to {contact['phone']}")
+            print(f"Message sent to {contact['phone']}")
+            return True, message, None
 
         except Exception as e:
             logging.error(f"Error sending message to {contact['phone']}: {str(e)}")
@@ -1125,6 +1217,7 @@ class WhatsAppAutomation:
                 contacts = self.load_data()
 
             self.setup_driver()
+            self.close_popups()
 
             results = {
                 'successful': [],
@@ -1134,10 +1227,10 @@ class WhatsAppAutomation:
 
             for contact in contacts:
                 if self.gui and self.gui.is_paused:
-                    while self.gui.is_paused and not self.gui.is_running:
+                    while self.gui.is_paused:
                         time.sleep(1)
-                    if not self.gui.is_running:
-                        break
+                        if not self.gui.is_running:
+                            return results
 
                 # Randomly select a message variation
                 message = random.choice(messages)
@@ -1162,8 +1255,14 @@ class WhatsAppAutomation:
                 if progress_callback:
                     progress_callback()
 
-                # Random delay between messages
-                time.sleep(random.uniform(5, 7))
+                # Random delay between messages (pause-aware)
+                delay = random.uniform(5, 7)
+                end_time = time.time() + delay
+                while time.time() < end_time:
+                    if self.gui and self.gui.is_paused:
+                        time.sleep(0.5)
+                        continue
+                    time.sleep(0.2)  # small chunks so pause can interrupt
 
             return results
 
