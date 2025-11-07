@@ -1153,55 +1153,38 @@ class WhatsAppAutomation:
 
             # Define the XPaths
             error_message_xpath = "//*[contains(text(), 'Phone number shared via url is invalid.')]"
-            send_button_xpath_list = [
-                "//button[@aria-label='Send']"
-                "//*[@role='button' and @aria-label='Send']",
-                "//span[@data-icon='wds-ic-send-filled']/ancestor::*[@role='button']"
-            ]
-
-            wait = WebDriverWait(self.driver, 25)
+            send_button_xpath = "//button[@aria-label='Send']"
 
             # Wait for either the error message or the chat box to load
             try:
-                wait.until(EC.any_of(
-                    EC.presence_of_element_located((By.XPATH, error_message_xpath)),
-                    EC.element_to_be_clickable((By.XPATH, send_button_xpath_list[0])),
-                    EC.element_to_be_clickable((By.XPATH, send_button_xpath_list[1])),
-                    EC.element_to_be_clickable((By.XPATH, send_button_xpath_list[2]))
-                ))
+                element = WebDriverWait(self.driver, 15).until(
+                    EC.presence_of_element_located((By.XPATH, f"{error_message_xpath} | {send_button_xpath}"))
+                )
+                # Check which element was found first
+                if element.get_attribute("aria-label") == "Send":
+                    # Send button was found, so proceed to send the message
+                    # Random delay before sending
+                    self.cooldown(random.uniform(self.min_delay, self.max_delay), contact['name'])
+
+                    # Click the send button
+                    element.click()
+                    time.sleep(3)  # Wait for the message to send
+
+                    logging.info(f"Message sent to {contact['phone']}")
+                    print(f"Message sent to {contact['phone']}")
+                    return True, message, None
+
+                else:
+                    # Error message was found, skip to the next contact
+                    logging.warning(f"Invalid phone number for {contact['phone']}. Skipping.")
+                    print(f"Invalid phone number for {contact['phone']}. Skipping.")
+                    return False, None, 'Invalid phone number'
 
             except Exception as e:
-                logging.error(f"Timeout waiting for chat to load or error message for {contact['phone']}")
-                print(f"Timeout waiting for chat to load or error message for {contact['phone']}")
-                return False, None, 'Timeout'
-
-            # Check if error message exists
-            if len(self.driver.find_elements(By.XPATH, error_message_xpath)) > 0:
-                logging.warning(f"Invalid phone number for {contact['phone']}. Skipping.")
-                print(f"Invalid phone number for {contact['phone']}. Skipping.")
-                return False, None, 'Invalid phone number'
-
-            # Otherwise, try to find the send button
-            send_button = None
-            for xpath in send_button_xpath_list:
-                elems = self.driver.find_elements(By.XPATH, xpath)
-                if elems:
-                    send_button = elems[0]
-                    break
-
-            if not send_button:
-                logging.error(f"Send button not found for {contact['phone']}")
-                print(f"Send button not found for {contact['phone']}")
-                return False, None, 'Send button not found'
-
-            # Wait a random delay before clicking send
-            self.cooldown(random.uniform(self.min_delay, self.max_delay), contact['name'])
-            send_button.click()
-            time.sleep(3)
-
-            logging.info(f"Message sent to {contact['phone']}")
-            print(f"Message sent to {contact['phone']}")
-            return True, message, None
+                # If neither element appears, log the issue
+                logging.error(f"Failed to load chat or detect error for {contact['phone']}: {str(e)}")
+                print(f"Failed to load chat or detect error for {contact['phone']}: {str(e)}")
+                return False, None, 'Failed to load chat or detect error'
 
         except Exception as e:
             logging.error(f"Error sending message to {contact['phone']}: {str(e)}")
