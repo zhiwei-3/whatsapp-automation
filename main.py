@@ -108,17 +108,18 @@ class WhatsAppAutomationGUI:
 
     def save_config(self):
         """Save current configuration to file"""
-        self.config.dark_mode = self.dark_mode_var.get()
         try:
             config_data = {
-                'min_delay': self.config.min_delay,
-                'max_delay': self.config.max_delay,
-                'headless': self.config.headless,
-                'save_reports': self.config.save_reports,
-                'dark_mode': self.config.dark_mode,
+                'min_delay': self.min_delay.get(),
+                'max_delay': self.max_delay.get(),
+                'headless': self.headless_var.get(),
+                'save_reports': self.save_reports_var.get(),
+                'dark_mode': self.dark_mode_var.get(),
             }
             with open(CONFIG_FILE, 'w') as f:
                 json.dump(config_data, f, indent=4)
+
+            print(config_data)
         except Exception as e:
             logging.error(f"Error saving config: {e}")
 
@@ -325,7 +326,8 @@ class WhatsAppAutomationGUI:
             settings_frame,
             style='TCheckbutton',
             text="Run in headless mode (after initial login)",
-            variable=self.headless_var
+            variable=self.headless_var,
+            command=self.save_config
         )
         self.headless_check.pack(side=tk.LEFT)
 
@@ -334,7 +336,8 @@ class WhatsAppAutomationGUI:
             settings_frame,
             style='TCheckbutton',
             text="Save detailed reports",
-            variable=self.save_reports_var
+            variable=self.save_reports_var,
+            command=self.save_config
         )
         self.save_reports_check.pack(side=tk.LEFT, padx=10)
 
@@ -844,6 +847,7 @@ class WhatsAppAutomationGUI:
             phone_column=self.phone_column,
             name_column=self.name_column,
             gui=self,
+            config=self.config,
             min_delay=min_delay,
             max_delay=max_delay
         )
@@ -933,7 +937,7 @@ class WhatsAppAutomation:
                  name_column: Optional[str] = None,
                  gui: Optional[WhatsAppAutomationGUI] = None,
                  config: Optional[AutomationConfig] = None,
-                 min_delay=3, max_delay=10):
+                 min_delay=10, max_delay=30):
         self.excel_path = Path(excel_path)
         self.phone_column = phone_column
         self.name_column = name_column
