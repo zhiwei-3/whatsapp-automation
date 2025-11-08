@@ -1,6 +1,6 @@
 {
-    "min_delay": "500",
-    "max_delay": "700",
+    "min_delay": "30",    # 30 seconds
+    "max_delay": "60",    # 60 seconds
     "headless": true,
     "save_reports": true,
     "dark_mode": true
