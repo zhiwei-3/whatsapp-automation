@@ -119,7 +119,6 @@ class WhatsAppAutomationGUI:
             with open(CONFIG_FILE, 'w') as f:
                 json.dump(config_data, f, indent=4)
 
-            print(config_data)
         except Exception as e:
             logging.error(f"Error saving config: {e}")
 
@@ -958,18 +957,38 @@ class WhatsAppAutomation:
         )
 
     def create_driver_options(self, headless=False):
-        """Create Chrome options with the specified settings"""
+        """Create Chrome options with the specified settings for stable automation."""
         options = webdriver.ChromeOptions()
+
+        # Use persistent session data (so WhatsApp Web stays logged in)
         options.add_argument(f"user-data-dir={self.user_data_dir}")
+
+        # Common stability/performance flags
         options.add_argument("--start-maximized")
         options.add_argument("--disable-notifications")
+        options.add_argument("--disable-infobars")
+        options.add_argument("--disable-extensions")
+        options.add_argument("--disable-popup-blocking")
+        options.add_argument("--no-sandbox")
+        options.add_argument("--disable-dev-shm-usage")
+        options.add_argument("--disable-blink-features=AutomationControlled")
 
+        # Prevent Chrome “automation” banners and crashes on long sessions
+        options.add_experimental_option("excludeSwitches", ["enable-automation"])
+        options.add_experimental_option("useAutomationExtension", False)
+
+        # Add a common user-agent to avoid some UI loading issues
+        options.add_argument(
+            "user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) "
+            "Chrome/120.0.0.0 Safari/537.36"
+        )
+
+        # Headless mode tweaks
         if headless:
             options.add_argument("--headless=new")
             options.add_argument("--window-size=1920,1080")
             options.add_argument("--disable-gpu")
-            options.add_argument("--no-sandbox")
-            options.add_argument("--disable-dev-shm-usage")
 
         return options
 
@@ -1156,44 +1175,73 @@ class WhatsAppAutomation:
             self.driver.get(url)
 
             # Define the XPaths
-            error_message_xpath = "//*[contains(text(), 'Phone number shared via url is invalid.')]"
-            send_button_xpath = "//button[@aria-label='Send']"
+            error_xpath = "//*[contains(text(), 'Phone number shared via url is invalid.')]"
+            chat_box_xpath = "//div[@contenteditable='true']"
 
-            # Wait for either the error message or the chat box to load
+            # Wait for chat or error
             try:
-                element = WebDriverWait(self.driver, 15).until(
-                    EC.presence_of_element_located((By.XPATH, f"{error_message_xpath} | {send_button_xpath}"))
+                WebDriverWait(self.driver, 15).until(
+                    lambda d: d.find_elements(By.XPATH, error_xpath)
+                              or d.find_elements(By.XPATH, chat_box_xpath)
                 )
-                # Check which element was found first
-                if element.get_attribute("aria-label") == "Send":
-                    # Send button was found, so proceed to send the message
-                    # Random delay before sending
-                    self.cooldown(random.uniform(self.min_delay, self.max_delay), contact['name'])
+            except Exception:
+                logging.error(f"Timeout waiting for chat or error for {contact['phone']}")
+                print(f"Timeout waiting for chat or error for {contact['phone']}")
+                return False, None, "Timeout waiting for chat or error"
 
-                    # Click the send button
-                    element.click()
-                    time.sleep(3)  # Wait for the message to send
+            # Handle invalid number
+            if self.driver.find_elements(By.XPATH, error_xpath):
+                logging.warning(f"Invalid phone number for {contact['phone']}. Skipping.")
+                print(f"Invalid phone number for {contact['phone']}. Skipping.")
+                return False, None, "Invalid phone number"
 
-                    logging.info(f"Message sent to {contact['phone']}")
-                    print(f"Message sent to {contact['phone']}")
-                    return True, message, None
+            # Wait for chat input to be ready
+            try:
+                WebDriverWait(self.driver, 10).until(
+                    EC.presence_of_element_located((By.XPATH, chat_box_xpath))
+                )
+            except Exception:
+                logging.error(f"Chat input not loaded for {contact['phone']}")
+                print(f"Chat input not loaded for {contact['phone']}")
+                return False, None, "Chat input not loaded"
 
-                else:
-                    # Error message was found, skip to the next contact
-                    logging.warning(f"Invalid phone number for {contact['phone']}. Skipping.")
-                    print(f"Invalid phone number for {contact['phone']}. Skipping.")
-                    return False, None, 'Invalid phone number'
+            # Find send button (robust multi-check)
+            possible_xpaths = [
+                "//button[@aria-label='Send']",
+                "//button[@data-icon='wds-ic-send-filled']",
+                "//span[@data-icon='wds-ic-send-filled']/ancestor::button",
+                "//div[@role='button' and @aria-label='Send']",
+            ]
 
-            except Exception as e:
-                # If neither element appears, log the issue
-                logging.error(f"Failed to load chat or detect error for {contact['phone']}: {str(e)}")
-                print(f"Failed to load chat or detect error for {contact['phone']}: {str(e)}")
-                return False, None, 'Failed to load chat or detect error'
+            send_button = None
+            for xpath in possible_xpaths:
+                try:
+                    send_button = WebDriverWait(self.driver, 10).until(
+                        EC.element_to_be_clickable((By.XPATH, xpath))
+                    )
+                    if send_button:
+                        break
+                except Exception:
+                    continue
+
+            if not send_button:
+                logging.warning(f"Send button not found for {contact['phone']}")
+                print(f"Send button not found for {contact['phone']}")
+                return False, None, "Send button not found"
+
+            # Send the message
+            self.cooldown(random.uniform(self.min_delay, self.max_delay), contact['name'])
+            send_button.click()
+            time.sleep(3)  # short pause to allow message to send
+
+            logging.info(f"Message sent to {contact['phone']}")
+            print(f"Message sent to {contact['phone']}")
+            return True, message, None
 
         except Exception as e:
-            logging.error(f"Error sending message to {contact['phone']}: {str(e)}")
-            print(f"Error sending message to {contact['phone']}: {str(e)}")
-            return False, None, 'Error sending message'
+            logging.error(f"Error sending message to {contact.get('phone', '?')}: {str(e)}")
+            print(f"Error sending message to {contact.get('phone', '?')}: {str(e)}")
+            return False, None, "Error sending message"
 
     def process_numbers(self, messages, retry_mode=False, retry_contacts=None, progress_callback=None):
         """Process all contacts from Excel sheet"""
