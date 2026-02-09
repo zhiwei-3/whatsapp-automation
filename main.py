@@ -39,6 +39,7 @@ class AutomationConfig:
     max_delay: float = 120.0
     headless: bool = True
     save_reports: bool = True
+    random_order: bool = False
     dark_mode: bool = False
 
 
@@ -114,6 +115,7 @@ class WhatsAppAutomationGUI:
                 'max_delay': self.max_delay.get(),
                 'headless': self.headless_var.get(),
                 'save_reports': self.save_reports_var.get(),
+                'random_order': self.random_order_var.get(),
                 'dark_mode': self.dark_mode_var.get(),
             }
             with open(CONFIG_FILE, 'w') as f:
@@ -137,7 +139,6 @@ class WhatsAppAutomationGUI:
         self.total: int = 0
         self.processed_count: int = 0
         self.message_variations: List[str] = []
-
     def setup_styles(self):
         """Configure custom styles for widgets"""
         if self.config.dark_mode:
@@ -210,6 +211,15 @@ class WhatsAppAutomationGUI:
                             background="2b2b2b",
                             foreground="#e5e5e5")
 
+            style.configure("Vertical.TScrollbar",
+                            background="#1e1e1e",
+                            troughcolor="#2b2b2b",
+                            arrowcolor="#e5e5e5")
+            style.configure("Horizontal.TScrollbar",
+                            background="#1e1e1e",
+                            troughcolor="#2b2b2b",
+                            arrowcolor="#e5e5e5")
+
         else:
             style = ttk.Style()
             style.configure("TButton",
@@ -230,21 +240,44 @@ class WhatsAppAutomationGUI:
                             font=('Helvetica', 10))
 
     def create_widgets(self):
-        """Create and arrange all GUI widgets"""
-        # Main container
+        """Create and arrange all GUI widgets with a scalable grid"""
         self.main_container = ttk.Frame(self.root, style="TFrame")
         self.main_container.pack(fill=tk.BOTH, expand=True, padx=20, pady=20)
 
-        self.create_file_section()
-        self.create_message_section()
-        self.create_settings_section()
-        self.create_preview_section()
-        self.create_control_section()
-        self.create_progress_section()
+        # Configure Main Container Rows
+        # Row 0: File (Fixed height)
+        # Row 1: Middle (Message/Settings - Scalable)
+        # Row 2: Preview (Treeview - Most Scalable)
+        # Row 3: Footer (Controls/Progress - Fixed height)
+        self.main_container.columnconfigure(0, weight=1)
+        self.main_container.rowconfigure(1, weight=2)
+        self.main_container.rowconfigure(2, weight=4)
 
-    def create_file_section(self):
+        # 1. TOP
+        self.create_file_section(self.main_container).grid(row=0, column=0, sticky="ew", pady=(0, 10))
+
+        # 2. MIDDLE (Side-by-Side)
+        self.middle_container = ttk.Frame(self.main_container, style="TFrame")
+        self.middle_container.grid(row=1, column=0, sticky="nsew", pady=(0, 10))
+        self.middle_container.columnconfigure(0, weight=3)  # Message gets more width
+        self.middle_container.columnconfigure(1, weight=1)  # Settings gets less
+        self.middle_container.rowconfigure(0, weight=1)
+
+        self.create_message_section(self.middle_container)
+        self.create_settings_section(self.middle_container)
+
+        # 3. PREVIEW
+        self.create_preview_section(self.main_container).grid(row=2, column=0, sticky="nsew")
+
+        # 4. FOOTER
+        self.footer_container = ttk.Frame(self.main_container, style="TFrame")
+        self.footer_container.grid(row=3, column=0, sticky="ew", pady=(10, 0))
+        self.create_control_section(self.footer_container)
+        self.create_progress_section(self.footer_container)
+
+    def create_file_section(self, parent):
         """Create file selection section"""
-        file_frame = ttk.LabelFrame(self.main_container, style="TLabelframe", text="File Selection", padding=10)
+        file_frame = ttk.LabelFrame(parent, style="TLabelframe", text="File Selection", padding=10)
         file_frame.pack(fill=tk.X, pady=(0, 5))
 
         self.file_label = ttk.Label(file_frame, style="TLabel", text="No file selected")
@@ -257,64 +290,55 @@ class WhatsAppAutomationGUI:
             style="TButton"
         )
         select_button.pack(side=tk.RIGHT)
+        return file_frame
 
-    def create_message_section(self):
+    def create_message_section(self, parent):
         """Create message input section"""
-        message_frame = ttk.LabelFrame(self.main_container, style="TLabelframe", text="Message Templates", padding=10)
-        message_frame.pack(fill=tk.X, pady=(0, 5))
-        backg = 'white'
-        foreg = 'black'
+        message_frame = ttk.LabelFrame(parent, style="TLabelframe", text="Message Templates", padding=10)
+        message_frame.grid(row=0, column=0, sticky="nsew", padx=(0, 5))
 
-        if self.config.dark_mode:
-            backg = '#2b2b2b'
-            foreg = 'white'
+        # Container for Text + Scrollbar
+        text_container = ttk.Frame(message_frame, style="TFrame")
+        text_container.pack(fill=tk.BOTH, expand=True)
 
-        # Message template input
-        self.message_text = tk.Text(message_frame, height=7, font=('Helvetica', 10), bg=backg, fg=foreg)
-        self.message_text.pack(fill=tk.X)
+        self.message_text = tk.Text(text_container, height=5, font=('Helvetica', 10),
+                                    bg='#2b2b2b' if self.config.dark_mode else 'white',
+                                    fg='white' if self.config.dark_mode else 'black',
+                                    undo=True, wrap=tk.WORD)
 
-        # Template variables helper
-        variables_label = ttk.Label(
-            message_frame,
-            text="Available variables: {name} - recipient's name",
-            font=('Helvetica', 9, 'italic'),
-            style="TLabel",
-        )
-        variables_label.pack(side=tk.LEFT)
+        text_vsb = ttk.Scrollbar(text_container, orient="vertical", command=self.message_text.yview)
+        self.message_text.configure(yscrollcommand=text_vsb.set)
 
-        self.load_template_button = ttk.Button(
-            message_frame,
-            text="Load Template",
-            style="Custom.TButton",
-            command=self.load_template
-        )
-        (self.load_template_button.pack(side=tk.RIGHT, padx=5, pady=5))
+        text_vsb.pack(side=tk.RIGHT, fill=tk.Y)
+        self.message_text.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
 
-        self.save_template_button = ttk.Button(
-            message_frame,
-            text="Save Template",
-            style="Custom.TButton",
-            command=self.save_template
-        )
-        self.save_template_button.pack(side=tk.RIGHT, padx=5, pady=5)
+        # Bottom container for labels/buttons to keep them from stretching awkwardly
+        btn_container = ttk.Frame(message_frame, style="TFrame")
+        btn_container.pack(fill=tk.X, pady=(5, 0))
 
-    def create_settings_section(self):
+        ttk.Label(btn_container, text="Variables: {name}", font=('Helvetica', 9, 'italic')).pack(side=tk.LEFT)
+        self.save_template_button = ttk.Button(btn_container, text="Save Template", style="Custom.TButton",
+                                               command=self.save_template)
+        self.save_template_button.pack(side=tk.RIGHT, padx=2)
+        self.load_template_button = ttk.Button(btn_container, text="Load Template", style="Custom.TButton",
+                                               command=self.load_template)
+        self.load_template_button.pack(side=tk.RIGHT, padx=2)
+
+    def create_settings_section(self, parent):
         """Create settings section"""
-        settings_frame = ttk.LabelFrame(self.main_container, style="TLabelframe", text="Settings", padding=10)
-        settings_frame.pack(fill=tk.X, pady=(0, 5))
+        settings_frame = ttk.LabelFrame(parent, style="TLabelframe", text="Settings", padding=10)
+        settings_frame.grid(row=0, column=1, sticky="nsew")
 
         # Delay settings
         delay_frame = ttk.Frame(settings_frame,  style="TFrame")
         delay_frame.pack(fill=tk.X)
 
         ttk.Label(delay_frame, style="TLabel", text="Delay Range (seconds):").pack(side=tk.LEFT)
-
         self.min_delay = ttk.Entry(delay_frame, style="TEntry", width=5)
         self.min_delay.insert(0, str(self.config.min_delay))
         self.min_delay.pack(side=tk.LEFT, padx=5)
 
         ttk.Label(delay_frame, style="TLabel", text="to").pack(side=tk.LEFT)
-
         self.max_delay = ttk.Entry(delay_frame, style="TEntry", width=5)
         self.max_delay.insert(0, str(self.config.max_delay))
         self.max_delay.pack(side=tk.LEFT, padx=5)
@@ -328,7 +352,7 @@ class WhatsAppAutomationGUI:
             variable=self.headless_var,
             command=self.save_config
         )
-        self.headless_check.pack(side=tk.LEFT)
+        self.headless_check.pack(anchor=tk.W)
 
         self.save_reports_var = tk.BooleanVar(value=self.config.save_reports)
         self.save_reports_check = ttk.Checkbutton(
@@ -338,7 +362,17 @@ class WhatsAppAutomationGUI:
             variable=self.save_reports_var,
             command=self.save_config
         )
-        self.save_reports_check.pack(side=tk.LEFT, padx=10)
+        self.save_reports_check.pack(anchor=tk.W)
+
+        self.random_order_var = tk.BooleanVar(value=self.config.random_order)
+        self.random_order_check = ttk.Checkbutton(
+            settings_frame,
+            text="Pick contacts in random order",
+            style='TCheckbutton',
+            variable=self.random_order_var,
+            command=self.save_config
+        )
+        self.random_order_check.pack(anchor=tk.W)
 
         self.dark_mode_var = tk.BooleanVar(value=self.config.dark_mode)
         self.dark_mode_check = ttk.Checkbutton(
@@ -348,42 +382,51 @@ class WhatsAppAutomationGUI:
             variable=self.dark_mode_var,
             command=self.save_config
         )
-        self.dark_mode_check.pack(side=tk.LEFT)
+        self.dark_mode_check.pack(anchor=tk.W)
 
-    def create_preview_section(self):
-        """Create data preview section"""
-        preview_frame = ttk.LabelFrame(self.main_container, style='TLabelframe', text="Data Preview", padding=10)
-        preview_frame.pack(fill=tk.BOTH, expand=True, pady=(0, 5))
+    def create_preview_section(self, parent):
+        """Create data preview section with scrollbars"""
+        preview_frame = ttk.LabelFrame(parent, style='TLabelframe', text="Data Preview", padding=10)
 
-        # Create Treeview with scrollbars
+        # Configure grid weights so the Treeview (0,0) expands, but scrollbars don't
+        preview_frame.columnconfigure(0, weight=1)
+        preview_frame.rowconfigure(0, weight=1)
+
+        # Create Treeview
         self.tree = ttk.Treeview(
             preview_frame,
             style="Treeview",
             show='headings',
             selectmode='browse',
-            height=5
+            height=7
         )
 
-        '''vsb = ttk.Scrollbar(preview_frame, style='Vertical.TScrollbar', orient="vertical", command=self.tree.yview)
-        hsb = ttk.Scrollbar(preview_frame, style='Horizontal.TScrollbar', orient="horizontal", command=self.tree.xview)
-        self.tree.configure(yscrollcommand=vsb.set, xscrollcommand=hsb.set)'''
+        # Create Scrollbars
+        vsb = ttk.Scrollbar(preview_frame, orient="vertical", command=self.tree.yview)
+        hsb = ttk.Scrollbar(preview_frame, orient="horizontal", command=self.tree.xview)
+        self.tree.configure(yscrollcommand=vsb.set, xscrollcommand=hsb.set)
 
-        # Grid layout for scrollable treeview
+        # Grid them:
+        # Treeview in the main cell
         self.tree.grid(column=0, row=0, sticky='nsew')
-        '''vsb.grid(column=1, row=0, sticky='ns')
-        hsb.grid(column=0, row=1, sticky='ew')'''
-        preview_frame.grid_columnconfigure(0, weight=1)
-        preview_frame.grid_rowconfigure(0, weight=1)
 
-        # Configure status colors
-        self.tree.tag_configure('success', background='#90EE90')
-        self.tree.tag_configure('error', background='#FFB6C1')
-        self.tree.tag_configure('pending', background='#FFE4B5')
+        # Vertical bar on the right
+        vsb.grid(column=1, row=0, sticky='ns')
 
-    def create_control_section(self):
+        # Horizontal bar on the bottom
+        hsb.grid(column=0, row=1, sticky='ew')
+
+        # Status colors
+        self.tree.tag_configure('success', background='#2e4a2e' if self.config.dark_mode else '#90EE90')
+        self.tree.tag_configure('error', background='#4a2e2e' if self.config.dark_mode else '#FFB6C1')
+        self.tree.tag_configure('pending', background='#4a432e' if self.config.dark_mode else '#FFE4B5')
+
+        return preview_frame
+
+    def create_control_section(self, parent):
         """Create control buttons section"""
-        control_frame = ttk.Frame(self.main_container)
-        control_frame.pack(fill=tk.X, pady=(0, 5))
+        control_frame = ttk.Frame(parent)
+        control_frame.pack(fill=tk.X, pady=(0, 10))
 
         self.start_button = ttk.Button(
             control_frame,
@@ -411,10 +454,10 @@ class WhatsAppAutomationGUI:
         )
         self.retry_button.pack(side=tk.LEFT, padx=5)
 
-    def create_progress_section(self):
+    def create_progress_section(self, parent):
         """Create progress tracking section"""
-        progress_frame = ttk.LabelFrame(self.main_container, style="TLabelframe", text="Progress", padding=10)
-        progress_frame.pack(fill=tk.X)
+        progress_frame = ttk.LabelFrame(parent, style="TLabelframe", text="Progress", padding=10)
+        progress_frame.pack(fill=tk.X, pady=(10, 0))
 
         self.progress_label = ttk.Label(progress_frame, style="TLabel", text="")
         self.progress_label.pack()
@@ -438,6 +481,7 @@ class WhatsAppAutomationGUI:
         )
         self.status_label.pack(pady=10)
 
+
     def setup_bindings(self):
         """Setup event bindings"""
         self.root.protocol("WM_DELETE_WINDOW", self.on_closing)
@@ -454,40 +498,45 @@ class WhatsAppAutomationGUI:
         self.root.destroy()
 
     def save_template(self):
-        """Save message template as txt file"""
+        """Save message template with non-blocking visual feedback"""
         self.save_template_button.config(state=tk.DISABLED)
         template = self.message_text.get("1.0", tk.END).strip()
         try:
             with open(TEMPLATE_FILE, 'w', encoding="utf-8") as msg:
                 msg.write(template)
-            self.save_template_button.config(text="Template Saved!")
-            self.save_template_button.update_idletasks()
-
+            self.save_template_button.config(text="Saved!")
         except Exception as e:
-            print(f'Error saving template: {e}')
+            logging.error(f'Error saving template: {e}')
             self.save_template_button.config(text="Error Saving")
         finally:
-            time.sleep(.5)
-            self.save_template_button.config(text="Save Template")
-            self.save_template_button.config(state=tk.ACTIVE)
+            # Reset button after 1.5 seconds without freezing
+            self.root.after(1500, lambda: self.save_template_button.config(
+                text="Save Template",
+                state=tk.NORMAL
+            ))
 
     def load_template(self):
-        """Load saved message template"""
+        """Load saved message template and replace current text"""
         self.load_template_button.config(state=tk.DISABLED)
         try:
             with open(TEMPLATE_FILE, 'r', encoding="utf-8") as msg:
                 template = msg.read()
+                self.message_text.delete("1.0", tk.END)
                 self.message_text.insert("1.0", template)
             self.load_template_button.config(text="Template Loaded!")
-            self.load_template_button.update_idletasks()
 
+        except FileNotFoundError:
+            print("No template file found.")
+            self.load_template_button.config(text="No File Found")
         except Exception as e:
             print(f'Error loading template: {e}')
             self.load_template_button.config(text="Error Loading")
         finally:
-            time.sleep(.5)
-            self.load_template_button.config(text="Load Template")
-            self.load_template_button.config(state=tk.ACTIVE)
+            # Reset button state after 1 second without freezing the UI
+            self.root.after(1000, lambda: self.load_template_button.config(
+                text="Load Template",
+                state=tk.NORMAL
+            ))
 
     def detect_phone_column(self, df):
         """Detect the column containing phone numbers"""
@@ -675,14 +724,19 @@ class WhatsAppAutomationGUI:
         )
 
     def update_status_in_tree(self, phone, status, details):
-        """Update status and details for a specific contact in the tree"""
+        """Update status and highlight the current active row"""
         for item in self.tree.get_children():
             values = list(self.tree.item(item)['values'])
             if str(values[self.columns.index(self.phone_column)]) == str(phone):
                 values[self.status_column_index] = status
                 values[self.status_column_index + 1] = details
-                self.tree.item(item, values=values)
-                self.tree.see(item)
+
+                # Apply tags for coloring
+                tag = 'success' if 'Success' in status else 'error'
+                self.tree.item(item, values=values, tags=(tag,))
+
+                self.tree.see(item)  # Auto-scroll to this item
+                self.tree.selection_set(item)  # Visually select the active row
                 break
         self.root.update()
 
@@ -709,7 +763,7 @@ class WhatsAppAutomationGUI:
                     'Status': 'Failed',
                     'Message_Sent': '',
                     'Timestamp': timestamp,
-                    'Details': f'Failed to send message: {str(failed['details']).split(': ')[1]}'
+                    'Details': f"Failed to send message: {str(failed.get('details', 'Unknown error'))}"
                 })
 
             # Convert to DataFrame for easier manipulation
@@ -806,7 +860,7 @@ class WhatsAppAutomationGUI:
             return
 
         # Get message variations
-        messages = self.message_text.get("1.0", tk.END).strip().split('\n')
+        messages = self.message_text.get("1.0", tk.END).strip().split('\n\n\n\n')
         messages = [msg for msg in messages if msg.strip()]
         if not messages:
             messagebox.showerror("Error", "Please enter at least one message variation!")
@@ -1175,13 +1229,16 @@ class WhatsAppAutomation:
             self.driver.get(url)
 
             # Define the XPaths
-            error_xpath = "//*[contains(text(), 'Phone number shared via url is invalid.')]"
+            error_xpaths = [
+                "//*[contains(text(), 'Phone number shared via url is invalid.')]",
+                "//div[@aria-label='Phone number shared via url is invalid.']"
+            ]
             chat_box_xpath = "//div[@contenteditable='true']"
 
             # Wait for chat or error
             try:
-                WebDriverWait(self.driver, 15).until(
-                    lambda d: d.find_elements(By.XPATH, error_xpath)
+                WebDriverWait(self.driver, 20).until(
+                    lambda d: any(d.find_elements(By.XPATH, xp) for xp in error_xpaths)
                               or d.find_elements(By.XPATH, chat_box_xpath)
                 )
             except Exception:
@@ -1190,14 +1247,16 @@ class WhatsAppAutomation:
                 return False, None, "Timeout waiting for chat or error"
 
             # Handle invalid number
-            if self.driver.find_elements(By.XPATH, error_xpath):
-                logging.warning(f"Invalid phone number for {contact['phone']}. Skipping.")
-                print(f"Invalid phone number for {contact['phone']}. Skipping.")
-                return False, None, "Invalid phone number"
+            for xp in error_xpaths:
+                if self.driver.find_elements(By.XPATH, xp):
+                    print(xp)
+                    logging.warning(f"Invalid phone number for {contact['phone']} (matched: {xp}). Skipping.")
+                    print(f"Invalid phone number for {contact['phone']}. Skipping.")
+                    return False, None, "Invalid phone number"
 
             # Wait for chat input to be ready
             try:
-                WebDriverWait(self.driver, 10).until(
+                WebDriverWait(self.driver, 15).until(
                     EC.presence_of_element_located((By.XPATH, chat_box_xpath))
                 )
             except Exception:
@@ -1216,10 +1275,11 @@ class WhatsAppAutomation:
             send_button = None
             for xpath in possible_xpaths:
                 try:
-                    send_button = WebDriverWait(self.driver, 10).until(
+                    send_button = WebDriverWait(self.driver, 15).until(
                         EC.element_to_be_clickable((By.XPATH, xpath))
                     )
                     if send_button:
+                        # print(xpath)
                         break
                 except Exception:
                     continue
@@ -1250,6 +1310,12 @@ class WhatsAppAutomation:
                 contacts = retry_contacts
             else:
                 contacts = self.load_data()
+
+            # Random logic
+            # If the checkbox is checked, shuffle the list before starting
+            if self.config.random_order:
+                random.shuffle(contacts)
+                logging.info("Contacts shuffled for random order.")
 
             self.setup_driver()
             self.close_popups()
