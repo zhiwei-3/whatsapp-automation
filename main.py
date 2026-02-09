@@ -1229,16 +1229,13 @@ class WhatsAppAutomation:
             self.driver.get(url)
 
             # Define the XPaths
-            error_xpaths = [
-                "//*[contains(text(), 'Phone number shared via url is invalid.')]",
-                "//div[@aria-label='Phone number shared via url is invalid.']"
-            ]
+            error_xpath = "//*[contains(text(), 'Phone number shared via url is invalid.')]"
             chat_box_xpath = "//div[@contenteditable='true']"
 
             # Wait for chat or error
             try:
-                WebDriverWait(self.driver, 20).until(
-                    lambda d: any(d.find_elements(By.XPATH, xp) for xp in error_xpaths)
+                WebDriverWait(self.driver, 25).until(
+                    lambda d: d.find_elements(By.XPATH, error_xpath)
                               or d.find_elements(By.XPATH, chat_box_xpath)
                 )
             except Exception:
@@ -1247,16 +1244,14 @@ class WhatsAppAutomation:
                 return False, None, "Timeout waiting for chat or error"
 
             # Handle invalid number
-            for xp in error_xpaths:
-                if self.driver.find_elements(By.XPATH, xp):
-                    print(xp)
-                    logging.warning(f"Invalid phone number for {contact['phone']} (matched: {xp}). Skipping.")
-                    print(f"Invalid phone number for {contact['phone']}. Skipping.")
-                    return False, None, "Invalid phone number"
+            if self.driver.find_elements(By.XPATH, error_xpath):
+                logging.warning(f"Invalid phone number for {contact['phone']}. Skipping.")
+                print(f"Invalid phone number for {contact['phone']}. Skipping.")
+                return False, None, "Invalid phone number"
 
             # Wait for chat input to be ready
             try:
-                WebDriverWait(self.driver, 15).until(
+                WebDriverWait(self.driver, 10).until(
                     EC.presence_of_element_located((By.XPATH, chat_box_xpath))
                 )
             except Exception:
@@ -1275,11 +1270,10 @@ class WhatsAppAutomation:
             send_button = None
             for xpath in possible_xpaths:
                 try:
-                    send_button = WebDriverWait(self.driver, 15).until(
+                    send_button = WebDriverWait(self.driver, 10).until(
                         EC.element_to_be_clickable((By.XPATH, xpath))
                     )
                     if send_button:
-                        # print(xpath)
                         break
                 except Exception:
                     continue
