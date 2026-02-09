@@ -3,5 +3,6 @@
     "max_delay": "60",
     "headless": true,
     "save_reports": true,
+    "random_order": true,
     "dark_mode": true
 }
