@@ -18,10 +18,12 @@ from dataclasses import dataclass
 from pathlib import Path
 import json
 
+from sympy.core.random import choice
+
 # Constants
 CONFIG_FILE = "config.json"
 LOG_FILE = "whatsapp_automation.log"
-TEMPLATE_FILE = "message_template.txt"
+TEMPLATE_FILE = "message_template.json"
 PROFILE_DIR = "whatsapp_profile"
 
 
@@ -294,35 +296,36 @@ class WhatsAppAutomationGUI:
 
     def create_message_section(self, parent):
         """Create message input section"""
-        message_frame = ttk.LabelFrame(parent, style="TLabelframe", text="Message Templates", padding=10)
+        message_frame = ttk.LabelFrame(parent, style="TLabelframe", text="Message Template", padding=10)
         message_frame.grid(row=0, column=0, sticky="nsew", padx=(0, 5))
 
-        # Container for Text + Scrollbar
-        text_container = ttk.Frame(message_frame, style="TFrame")
-        text_container.pack(fill=tk.BOTH, expand=True)
+        # Tab Control (Notebook)
+        self.notebook = ttk.Notebook(message_frame)
+        self.notebook.pack(fill=tk.BOTH, expand=True)
 
-        self.message_text = tk.Text(text_container, height=5, font=('Helvetica', 10),
-                                    bg='#2b2b2b' if self.config.dark_mode else 'white',
-                                    fg='white' if self.config.dark_mode else 'black',
-                                    undo=True, wrap=tk.WORD)
+        # Store text widgets in a list for easy access
+        self.tab_texts = []
 
-        text_vsb = ttk.Scrollbar(text_container, orient="vertical", command=self.message_text.yview)
-        self.message_text.configure(yscrollcommand=text_vsb.set)
-
-        text_vsb.pack(side=tk.RIGHT, fill=tk.Y)
-        self.message_text.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-
-        # Bottom container for labels/buttons to keep them from stretching awkwardly
+        # Bottom Buttons Row
         btn_container = ttk.Frame(message_frame, style="TFrame")
         btn_container.pack(fill=tk.X, pady=(5, 0))
 
         ttk.Label(btn_container, text="Variables: {name}", font=('Helvetica', 9, 'italic')).pack(side=tk.LEFT)
+
         self.save_template_button = ttk.Button(btn_container, text="Save Template", style="Custom.TButton",
                                                command=self.save_template)
         self.save_template_button.pack(side=tk.RIGHT, padx=2)
         self.load_template_button = ttk.Button(btn_container, text="Load Template", style="Custom.TButton",
                                                command=self.load_template)
         self.load_template_button.pack(side=tk.RIGHT, padx=2)
+
+        ttk.Button(btn_container, text="-", style="Custom.TButton", width=5,
+                   command=self.remove_current_tab).pack(side=tk.RIGHT)
+        ttk.Button(btn_container, text="+", style="Custom.TButton", width=5,
+                   command=self.add_new_tab).pack(side=tk.RIGHT)
+
+        # Initialize with at least one tab
+        self.add_new_tab()
 
     def create_settings_section(self, parent):
         """Create settings section"""
@@ -398,7 +401,7 @@ class WhatsAppAutomationGUI:
             style="Treeview",
             show='headings',
             selectmode='browse',
-            height=7
+            height=7  # min row
         )
 
         # Create Scrollbars
@@ -497,17 +500,54 @@ class WhatsAppAutomationGUI:
         self.save_config()
         self.root.destroy()
 
+    def add_new_tab(self, content=""):
+        """Create a new tab with a text editor"""
+        tab_id = len(self.tab_texts) + 1
+        frame = ttk.Frame(self.notebook, style="TFrame")
+
+        # Standard text widget for each tab
+        text_area = tk.Text(frame, height=5, font=('Helvetica', 10),
+                            bg='#2b2b2b' if self.config.dark_mode else 'white',
+                            fg='white' if self.config.dark_mode else 'black',
+                            undo=True, wrap=tk.WORD)
+        text_area.insert("1.0", content)
+        text_area.pack(fill=tk.BOTH, expand=True)
+
+        self.notebook.add(frame, text=f"Variant {tab_id}")
+        self.tab_texts.append(text_area)
+        self.notebook.select(frame)  # Focus new tab
+
+    def remove_current_tab(self):
+        """Remove the currently selected tab"""
+        if len(self.tab_texts) > 1:
+            index = self.notebook.index("current")
+            self.notebook.forget(index)
+            self.tab_texts.pop(index)
+            # Rename remaining tabs for consistency
+            for i, text_widget in enumerate(self.tab_texts):
+                self.notebook.tab(i, text=f"Variant {i + 1}")
+
     def save_template(self):
-        """Save message template with non-blocking visual feedback"""
+        """Save all tab contents into one file"""
         self.save_template_button.config(state=tk.DISABLED)
-        template = self.message_text.get("1.0", tk.END).strip()
+
+        if not messagebox.askyesno("Save Template", "Are you sure?"):
+            self.root.after(1500, lambda: self.save_template_button.config(
+                text="Save Template",
+                state=tk.NORMAL
+            ))
+            return
+
+        # Collect text from every tab
+        data = [t.get("1.0", tk.END).strip() for t in self.tab_texts if t.get("1.0", tk.END).strip()]
+
         try:
             with open(TEMPLATE_FILE, 'w', encoding="utf-8") as msg:
-                msg.write(template)
+                json.dump(data, msg, indent=4)
             self.save_template_button.config(text="Saved!")
         except Exception as e:
             logging.error(f'Error saving template: {e}')
-            self.save_template_button.config(text="Error Saving")
+            messagebox.showerror("Error", f"Could not save: {e}")
         finally:
             # Reset button after 1.5 seconds without freezing
             self.root.after(1500, lambda: self.save_template_button.config(
@@ -516,27 +556,39 @@ class WhatsAppAutomationGUI:
             ))
 
     def load_template(self):
-        """Load saved message template and replace current text"""
+        """Load file and create a tab for each variation"""
         self.load_template_button.config(state=tk.DISABLED)
-        try:
-            with open(TEMPLATE_FILE, 'r', encoding="utf-8") as msg:
-                template = msg.read()
-                self.message_text.delete("1.0", tk.END)
-                self.message_text.insert("1.0", template)
-            self.load_template_button.config(text="Template Loaded!")
 
-        except FileNotFoundError:
-            print("No template file found.")
-            self.load_template_button.config(text="No File Found")
-        except Exception as e:
-            print(f'Error loading template: {e}')
-            self.load_template_button.config(text="Error Loading")
-        finally:
-            # Reset button state after 1 second without freezing the UI
+        if not messagebox.askyesno("Load Template", "Are you sure?"):
             self.root.after(1000, lambda: self.load_template_button.config(
                 text="Load Template",
                 state=tk.NORMAL
             ))
+            return
+
+        # Clear existing tabs
+        for i in range(len(self.tab_texts) -1, -1, -1):
+            self.notebook.forget(i)
+        self.tab_texts = []
+
+        if os.path.exists(TEMPLATE_FILE):
+            try:
+                with open(TEMPLATE_FILE, 'r', encoding="utf-8") as msg:
+                    data = json.load(msg)
+                    for variant in data:
+                        self.add_new_tab(variant)
+
+                    self.load_template_button.config(text="Template Loaded!")
+            except Exception:
+                self.add_new_tab("")  # Fallback to empty
+            finally:
+                # Reset button state after 1 second without freezing the UI
+                self.root.after(1000, lambda: self.load_template_button.config(
+                    text="Load Template",
+                    state=tk.NORMAL
+                ))
+        else:
+            self.add_new_tab("")  # Default if no file exists
 
     def detect_phone_column(self, df):
         """Detect the column containing phone numbers"""
@@ -732,11 +784,12 @@ class WhatsAppAutomationGUI:
                 values[self.status_column_index + 1] = details
 
                 # Apply tags for coloring
+                self.tree.see(item)  # Auto-scroll to this item
+                self.tree.selection_set(item)  # Visually select the active row
+
                 tag = 'success' if 'Success' in status else 'error'
                 self.tree.item(item, values=values, tags=(tag,))
 
-                self.tree.see(item)  # Auto-scroll to this item
-                self.tree.selection_set(item)  # Visually select the active row
                 break
         self.root.update()
 
@@ -860,8 +913,7 @@ class WhatsAppAutomationGUI:
             return
 
         # Get message variations
-        messages = self.message_text.get("1.0", tk.END).strip().split('\n\n\n\n')
-        messages = [msg for msg in messages if msg.strip()]
+        messages = [t.get("1.0", tk.END).strip() for t in self.tab_texts if t.get("1.0", tk.END).strip()]
         if not messages:
             messagebox.showerror("Error", "Please enter at least one message variation!")
             return
@@ -1229,29 +1281,33 @@ class WhatsAppAutomation:
             self.driver.get(url)
 
             # Define the XPaths
-            error_xpath = "//*[contains(text(), 'Phone number shared via url is invalid.')]"
+            error_xpath = (
+                "//*[contains(text(), \"isn't on WhatsApp\")] | "
+                "//*[contains(text(), 'Phone number shared via url is invalid')] | "
+                "//*[contains(text(), 'Invalid phone number')]"
+            )
             chat_box_xpath = "//div[@contenteditable='true']"
 
             # Wait for chat or error
             try:
-                WebDriverWait(self.driver, 25).until(
-                    lambda d: d.find_elements(By.XPATH, error_xpath)
-                              or d.find_elements(By.XPATH, chat_box_xpath)
+                WebDriverWait(self.driver, 30).until(
+                    lambda d: d.find_elements(By.XPATH, chat_box_xpath) or
+                              d.find_elements(By.XPATH, error_xpath)
                 )
             except Exception:
                 logging.error(f"Timeout waiting for chat or error for {contact['phone']}")
                 print(f"Timeout waiting for chat or error for {contact['phone']}")
                 return False, None, "Timeout waiting for chat or error"
 
-            # Handle invalid number
+            # Check if error exists
             if self.driver.find_elements(By.XPATH, error_xpath):
-                logging.warning(f"Invalid phone number for {contact['phone']}. Skipping.")
-                print(f"Invalid phone number for {contact['phone']}. Skipping.")
+                logging.warning(f"Invalid phone number: {contact['phone']}")
+                print(f"Invalid phone number: {contact['phone']}")
                 return False, None, "Invalid phone number"
 
-            # Wait for chat input to be ready
+            # Wait for chat input
             try:
-                WebDriverWait(self.driver, 10).until(
+                WebDriverWait(self.driver, 30).until(
                     EC.presence_of_element_located((By.XPATH, chat_box_xpath))
                 )
             except Exception:
@@ -1259,7 +1315,7 @@ class WhatsAppAutomation:
                 print(f"Chat input not loaded for {contact['phone']}")
                 return False, None, "Chat input not loaded"
 
-            # Find send button (robust multi-check)
+            # Find send button
             possible_xpaths = [
                 "//button[@aria-label='Send']",
                 "//button[@data-icon='wds-ic-send-filled']",
@@ -1270,7 +1326,7 @@ class WhatsAppAutomation:
             send_button = None
             for xpath in possible_xpaths:
                 try:
-                    send_button = WebDriverWait(self.driver, 10).until(
+                    send_button = WebDriverWait(self.driver, 30).until(
                         EC.element_to_be_clickable((By.XPATH, xpath))
                     )
                     if send_button:
@@ -1351,7 +1407,7 @@ class WhatsAppAutomation:
                     progress_callback()
 
                 # Random delay between messages (pause-aware)
-                delay = random.uniform(5, 7)
+                delay = random.uniform(5, 8)
                 end_time = time.time() + delay
                 while time.time() < end_time:
                     if self.gui and self.gui.is_paused:
@@ -1367,6 +1423,7 @@ class WhatsAppAutomation:
         finally:
             if self.driver:
                 self.driver.quit()
+                self.driver = None
 
 if __name__ == "__main__":
     app = WhatsAppAutomationGUI()
