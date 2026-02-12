@@ -18,7 +18,6 @@ from dataclasses import dataclass
 from pathlib import Path
 import json
 
-from sympy.core.random import choice
 
 # Constants
 CONFIG_FILE = "config.json"
